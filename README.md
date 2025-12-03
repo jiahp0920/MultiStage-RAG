@@ -291,3 +291,5 @@ docker run -p 8000:8000 --env-file .env multistage-rag
 ---
 
 **MultiStage-RAG** - 高效、灵活、可靠的多阶段检索增强生成系统
+
+## 备注：目前属于第一次试验性版本，可能存在一些bug和性能问题。欢迎反馈和贡献。后面会继续优化和完善。
