@@ -1,0 +1,338 @@
+# ============================================
+# MultiStage-RAG 默认配置文件
+# 版本: 1.0.0
+# 最后更新: 2024-01-01
+# ============================================
+
+# ============================================
+# 应用基础配置
+# ============================================
+app:
+  name: "MultiStage-RAG"
+  version: "1.0.0"
+  description: "A configurable multi-stage RAG system"
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  environment: "production"  # development, staging, production
+  debug: false
+  host: "0.0.0.0"
+  port: 8000
+
+# ============================================
+# 三级检索流程配置
+# ============================================
+retrieval:
+  # 启用哪些阶段
+  enabled_stages:
+    recall: true      # 召回阶段：向量检索
+    pre_rank: true    # 粗排阶段：BM25 + 规则
+    re_rank: true     # 精排阶段：重排序模型
+
+  # 各阶段详细参数
+  stage_params:
+    recall:
+      top_k: 100               # 召回文档数量
+      score_threshold: 0.0     # 相似度分数阈值
+      embedding_model: "text-embedding-3-small"  # 嵌入模型
+
+    pre_rank:
+      top_k: 20                # 粗排后保留文档数
+      bm25_weight: 0.7         # BM25权重
+      rule_weight: 0.3         # 规则权重
+      bm25_k1: 1.5             # BM25参数k1
+      bm25_b: 0.75             # BM25参数b
+
+    re_rank:
+      top_k: 5                 # 最终返回文档数
+      cache_ttl: 3600          # 缓存过期时间（秒）
+      timeout: 3               # API超时时间（秒）
+      batch_size: 16           # 批量处理大小
+
+# ============================================
+# 向量存储配置
+# ============================================
+vector_store:
+  # 向量存储类型：chroma, faiss, milvus, pinecone
+  type: "chroma"
+
+  # ChromaDB配置（默认）
+  chroma:
+    persist_directory: "./data/chroma_db"      # 数据存储目录
+    collection_name: "documents"               # 集合名称
+    embedding_function: "default"              # 嵌入函数
+    embedding_model: "text-embedding-3-small"  # 嵌入模型
+    distance_function: "cosine"                # 距离函数：cosine, l2, ip
+    allow_reset: true                          # 是否允许重置
+
+  # FAISS配置（可选）
+  faiss:
+    index_path: "./data/faiss_index"           # 索引文件路径
+    dimension: 384                             # 向量维度
+    metric_type: "IP"                          # 度量类型：IP（内积）, L2
+    nlist: 100                                 # 聚类中心数量
+    nprobe: 10                                 # 搜索聚类中心数
+
+  # Milvus配置（可选）
+  milvus:
+    host: "localhost"                          # Milvus服务地址
+    port: 19530                                # Milvus端口
+    collection_name: "documents"               # 集合名称
+    dimension: 768                             # 向量维度
+    index_params:                              # 索引参数
+      index_type: "IVF_FLAT"
+      metric_type: "L2"
+      params:
+        nlist: 128
+
+  # Pinecone配置（可选）
+  pinecone:
+    api_key: "${PINECONE_API_KEY}"             # API密钥（环境变量）
+    environment: "us-west1-gcp"                # 环境
+    index_name: "multistage-rag"               # 索引名称
+    dimension: 1536                            # 向量维度
+    metric: "cosine"                           # 距离度量
+
+# ============================================
+# 重排序器配置
+# ============================================
+reranker:
+  # 重排序器类型：bailian, bge, cohere, openai
+  type: "bailian"
+
+  # 阿里百炼配置（默认）
+  bailian:
+    api_key: "${BAILIAN_API_KEY}"              # API密钥（环境变量）
+    endpoint: "https://dashscope.aliyuncs.com/api/v1/services/rerank"
+    model: "bailian-rerank-v1"                 # 模型名称
+    top_n: 100                                 # 返回文档数量
+    return_documents: true                     # 是否返回文档内容
+    timeout: 5                                 # 请求超时（秒）
+
+  # BGE开源重排序器配置
+  bge:
+    model_name: "BAAI/bge-reranker-large"      # 模型名称
+    device: "cuda"                             # 设备：cuda, cpu, mps
+    batch_size: 32                             # 批量大小
+    max_length: 512                            # 最大长度
+    normalize: true                            # 是否归一化
+
+  # Cohere配置
+  cohere:
+    api_key: "${COHERE_API_KEY}"               # API密钥
+    model: "rerank-english-v3.0"               # 模型名称
+    top_n: 100                                 # 返回文档数量
+
+  # OpenAI配置
+  openai:
+    api_key: "${OPENAI_API_KEY}"               # API密钥
+    model: "gpt-3.5-turbo"                     # 模型名称
+
+# ============================================
+# 规则引擎配置
+# ============================================
+rule_engine:
+  # 启用的规则列表
+  enabled_rules:
+    - "recency"     # 时效性规则
+    - "authority"   # 权威性规则
+    - "keyword"     # 关键词规则
+    - "length"      # 长度规则
+
+  # 各规则详细参数
+  rule_params:
+    recency:
+      weight: 0.2                              # 规则权重
+      recent_days: 7                           # 最近几天视为新文档
+      older_penalty: 0.1                       # 老旧文档惩罚
+      date_field: "publish_date"               # 日期字段名
+
+    authority:
+      weight: 0.3                              # 规则权重
+      source_weights:                          # 来源权重
+        wikipedia: 1.0
+        textbook: 0.9
+        research_paper: 0.8
+        official_document: 0.9
+        news: 0.6
+        blog: 0.3
+        forum: 0.2
+        unknown: 0.1
+      citation_boost: 0.5                      # 引用数加成
+      verified_boost: 0.3                      # 已验证内容加成
+
+    keyword:
+      weight: 0.5                              # 规则权重
+      mandatory_keywords: []                   # 必须包含的关键词
+      boost_keywords: []                       # 加分关键词
+      penalty_keywords: []                     # 减分关键词
+      keyword_weights: {}                      # 特定关键词权重
+      query_boost: 0.1                         # 查询词匹配加成
+
+    length:
+      weight: 0.1                              # 规则权重
+      ideal_min_length: 100                    # 理想最小长度
+      ideal_max_length: 2000                   # 理想最大长度
+      too_short_penalty: 0.5                   # 过短惩罚
+      too_long_penalty: 0.3                    # 过长惩罚
+
+# ============================================
+# 缓存配置
+# ============================================
+cache:
+  # 缓存类型：redis, memory, null
+  type: "redis"
+
+  # Redis缓存配置（默认）
+  redis:
+    host: "localhost"                          # Redis主机
+    port: 6379                                 # Redis端口
+    db: 0                                      # 数据库编号
+    password: "${REDIS_PASSWORD}"              # 密码（环境变量）
+    key_prefix: "multistage_rag:"              # 键前缀
+    socket_timeout: 5                          # 套接字超时
+    socket_connect_timeout: 5                  # 连接超时
+    retry_on_timeout: true                     # 超时重试
+    health_check_interval: 30                  # 健康检查间隔
+
+  # 内存缓存配置
+  memory:
+    max_size: 1000                             # 最大缓存条目数
+    default_ttl: 300                           # 默认过期时间（秒）
+    cleanup_interval: 60                       # 清理间隔（秒）
+
+  # 空缓存配置（用于禁用缓存）
+  null: {}
+
+# ============================================
+# LLM配置（用于最终答案生成）
+# ============================================
+llm:
+  # LLM类型：openai, qwen, anthropic, azure
+  type: "openai"
+
+  # OpenAI配置（默认）
+  openai:
+    api_key: "${OPENAI_API_KEY}"               # API密钥
+    model: "gpt-4"                             # 模型名称
+    temperature: 0.1                           # 温度参数
+    max_tokens: 1000                           # 最大token数
+    top_p: 1.0                                 # 核采样参数
+    frequency_penalty: 0.0                     # 频率惩罚
+    presence_penalty: 0.0                      # 存在惩罚
+    timeout: 30                                # 请求超时
+    max_retries: 3                             # 最大重试次数
+
+  # 通义千问配置
+  qwen:
+    api_key: "${QWEN_API_KEY}"                 # API密钥
+    model: "qwen-max"                          # 模型名称
+    temperature: 0.1                           # 温度参数
+    max_tokens: 1000                           # 最大token数
+    top_p: 0.8                                 # 核采样参数
+    enable_search: false                       # 是否启用搜索
+
+  # Anthropic Claude配置
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"            # API密钥
+    model: "claude-3-opus-20240229"           # 模型名称
+    temperature: 0.1                           # 温度参数
+    max_tokens: 1000                           # 最大token数
+
+  # Azure OpenAI配置
+  azure:
+    api_key: "${AZURE_OPENAI_API_KEY}"         # API密钥
+    endpoint: "https://{your-resource-name}.openai.azure.com/"
+    api_version: "2023-12-01-preview"
+    deployment_name: "gpt-4"                   # 部署名称
+
+# ============================================
+# 监控和可观测性配置
+# ============================================
+monitoring:
+  enabled: true                                # 是否启用监控
+  metrics_port: 9090                           # 指标端口
+  push_interval: 30                            # 指标推送间隔（秒）
+
+  # 监控指标配置
+  metrics:
+    - "retrieval_latency"                      # 检索延迟
+    - "stage_latency"                          # 各阶段延迟
+    - "cache_hit_rate"                         # 缓存命中率
+    - "fallback_rate"                          # 降级率
+    - "document_counts"                        # 文档数量
+    - "error_rate"                             # 错误率
+    - "concurrent_requests"                    # 并发请求数
+
+  # 日志配置
+  logging:
+    format: "json"                             # 日志格式：json, text
+    level: "INFO"                              # 日志级别
+    file_path: "./logs/multistage_rag.log"     # 日志文件路径
+    max_size: 100                              # 最大文件大小（MB）
+    backup_count: 5                            # 备份文件数量
+
+  # 分布式追踪配置
+  tracing:
+    enabled: false                             # 是否启用分布式追踪
+    service_name: "multistage-rag"             # 服务名称
+    endpoint: "http://localhost:4317"          # OTLP端点
+
+# ============================================
+# 降级和容错配置
+# ============================================
+fallback:
+  enabled: true                                # 是否启用降级
+  strategy: "hybrid"                           # 降级策略：hybrid, bm25_only, vector_only
+
+  # 混合降级权重
+  hybrid_weights:
+    vector: 0.4                                # 向量相似度权重
+    bm25: 0.4                                  # BM25权重
+    rule: 0.2                                  # 规则权重
+
+  # 熔断器配置
+  circuit_breaker:
+    failure_threshold: 5                       # 失败阈值
+    recovery_timeout: 30                       # 恢复超时（秒）
+    timeout_threshold: 2000                    # 超时阈值（毫秒）
+    half_open_max_calls: 3                     # 半开状态最大调用数
+    sliding_window_size: 10                    # 滑动窗口大小
+
+  # 重试配置
+  retry:
+    max_attempts: 3                            # 最大重试次数
+    delay: 1.0                                 # 初始延迟（秒）
+    backoff: 2.0                               # 退避系数
+    jitter: 0.1                                # 抖动系数
+
+# ============================================
+# 高级配置
+# ============================================
+advanced:
+  # 异步配置
+  async:
+    max_concurrent: 100                        # 最大并发数
+    queue_size: 1000                           # 队列大小
+    timeout: 30                                # 异步超时（秒）
+
+  # 性能调优
+  performance:
+    enable_prefetch: true                      # 是否启用预取
+    prefetch_size: 10                          # 预取大小
+    enable_batching: true                      # 是否启用批处理
+    batch_timeout: 0.1                         # 批处理超时（秒）
+    max_batch_size: 32                         # 最大批处理大小
+
+  # 内存管理
+  memory:
+    max_cache_size_mb: 1024                    # 最大缓存大小（MB）
+    max_document_size_mb: 10                   # 单文档最大大小（MB）
+    cleanup_interval: 300                      # 清理间隔（秒）
+
+  # 安全配置
+  security:
+    enable_rate_limit: true                    # 是否启用限流
+    rate_limit_per_minute: 60                  # 每分钟请求限制
+    enable_auth: false                         # 是否启用认证
+    allowed_origins:                           # 允许的源
+      - "*"
+    cors_enabled: true                         # 是否启用CORS

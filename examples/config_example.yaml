@@ -1,0 +1,480 @@
+# ============================================
+# MultiStage-RAG 配置示例文件
+# 包含详细注释和示例配置
+# ============================================
+
+# ============================================
+# 🚀 快速开始配置示例
+# ============================================
+
+# 1. 使用最小化配置（仅需配置API密钥）
+app:
+  name: "MultiStage-RAG"
+  log_level: "INFO"
+
+retrieval:
+  enabled_stages:
+    recall: true
+    pre_rank: true
+    re_rank: true
+
+  stage_params:
+    recall:
+      top_k: 100
+    pre_rank:
+      top_k: 20
+    re_rank:
+      top_k: 5
+      cache_ttl: 3600
+
+# 必需：配置您的API密钥
+vector_store:
+  type: "chroma"
+  chroma:
+    persist_directory: "./data/chroma_db"
+
+reranker:
+  type: "bailian"
+  bailian:
+    api_key: "${BAILIAN_API_KEY}"  # 设置环境变量 BAILIAN_API_KEY
+
+cache:
+  type: "memory"  # 开发环境可使用内存缓存
+  memory:
+    max_size: 1000
+
+# ============================================
+# 🎯 场景化配置示例
+# ============================================
+
+# 场景1：高性能生产环境配置
+high_performance:
+  app:
+    log_level: "WARNING"  # 减少日志输出
+    environment: "production"
+
+  retrieval:
+    stage_params:
+      recall:
+        top_k: 150  # 召回更多文档提高召回率
+      pre_rank:
+        top_k: 30   # 粗排过滤更严格
+      re_rank:
+        top_k: 10   # 返回更多文档给LLM
+
+  cache:
+    type: "redis"
+    redis:
+      host: "redis-cluster.example.com"
+      key_prefix: "prod_rag:"
+
+  fallback:
+    circuit_breaker:
+      failure_threshold: 3  # 生产环境更敏感
+
+# 场景2：中文文档检索优化
+chinese_optimized:
+  retrieval:
+    stage_params:
+      recall:
+        embedding_model: "text-embedding-v2"  # 中文优化模型
+
+      pre_rank:
+        bm25_weight: 0.6
+        rule_weight: 0.4  # 提高规则权重
+
+  rule_engine:
+    rule_params:
+      keyword:
+        # 中文停用词配置
+        penalty_keywords:
+          - "本文"
+          - "综上所述"
+          - "总而言之"
+
+      recency:
+        date_field: "发布时间"  # 中文日期字段
+
+  reranker:
+    type: "bailian"  # 阿里百炼对中文优化更好
+    bailian:
+      model: "bailian-rerank-v1-chinese"
+
+# 场景3：研究实验配置
+research_experiment:
+  app:
+    log_level: "DEBUG"  # 详细日志用于调试
+    debug: true
+
+  retrieval:
+    enabled_stages:
+      recall: true
+      pre_rank: true
+      re_rank: false  # 禁用精排，测试前两阶段效果
+
+  rule_engine:
+    enabled_rules:
+      - "recency"
+      - "authority"
+      # - "keyword"  # 注释掉关键词规则进行对比实验
+
+  monitoring:
+    enabled: true
+    metrics:
+      - "retrieval_latency"
+      - "stage_latency"
+      - "cache_hit_rate"
+
+# ============================================
+# 🔧 组件配置示例
+# ============================================
+
+# 向量存储配置示例
+vector_store_examples:
+  # ChromaDB（推荐用于开发和中小规模）
+  chroma_example:
+    type: "chroma"
+    chroma:
+      persist_directory: "./data/chroma_db"
+      collection_name: "research_papers"
+      embedding_function: "sentence_transformers"
+      embedding_model: "all-MiniLM-L6-v2"
+
+  # FAISS（推荐用于大规模本地部署）
+  faiss_example:
+    type: "faiss"
+    faiss:
+      index_path: "./data/faiss_index"
+      dimension: 768
+      metric_type: "L2"
+      nlist: 256  # 更大的nlist提高精度，但降低速度
+
+  # Milvus（推荐用于企业级部署）
+  milvus_example:
+    type: "milvus"
+    milvus:
+      host: "milvus-cluster.example.com"
+      port: 19530
+      collection_name: "enterprise_docs"
+      index_params:
+        index_type: "HNSW"  # HNSW索引平衡精度和速度
+        metric_type: "IP"
+        params:
+          M: 16
+          efConstruction: 200
+
+  # Pinecone（推荐用于云原生部署）
+  pinecone_example:
+    type: "pinecone"
+    pinecone:
+      api_key: "${PINECONE_API_KEY}"
+      environment: "us-west1-gcp"
+      index_name: "cloud-docs"
+      dimension: 1536
+      pod_type: "p1.x1"  # 选择适合的pod类型
+
+# 重排序器配置示例
+reranker_examples:
+  # 阿里百炼（中文优化，推荐用于中文场景）
+  bailian_example:
+    type: "bailian"
+    bailian:
+      model: "bailian-rerank-v1"
+      # 高级参数
+      temperature: 0.01  # 降低随机性
+      return_scores: true
+
+  # BGE开源模型（免费，可本地部署）
+  bge_example:
+    type: "bge"
+    bge:
+      model_name: "BAAI/bge-reranker-v2-m3"
+      device: "cuda"  # 使用GPU加速
+      batch_size: 64   # 增大批处理提高吞吐
+      normalize: true  # 分数归一化
+
+  # Cohere（英文优化）
+  cohere_example:
+    type: "cohere"
+    cohere:
+      model: "rerank-english-v3.0"
+      top_n: 100
+
+  # 多模型混合（高级用法）
+  hybrid_example:
+    type: "ensemble"  # 需要自定义实现
+    weights:
+      bailian: 0.5
+      bge: 0.3
+      cohere: 0.2
+
+# 规则引擎配置示例
+rule_engine_examples:
+  # 新闻时效性场景
+  news_scenario:
+    enabled_rules:
+      - "recency"
+      - "authority"
+      - "keyword"
+
+    rule_params:
+      recency:
+        weight: 0.4  # 新闻时效性很重要
+        recent_days: 3  # 3天内为最新
+        older_penalty: 0.3  # 旧新闻严重惩罚
+
+      authority:
+        source_weights:
+          official_news: 1.0
+          press_release: 0.9
+          verified_blog: 0.7
+          social_media: 0.3
+
+      keyword:
+        mandatory_keywords: ["发布会", "最新消息"]
+        boost_keywords: ["突发", "紧急", "重要"]
+
+  # 学术论文检索场景
+  academic_scenario:
+    enabled_rules:
+      - "authority"
+      - "recency"
+      - "length"
+
+    rule_params:
+      authority:
+        weight: 0.6  # 权威性最重要
+        source_weights:
+          nature_science: 1.0
+          peer_reviewed: 0.9
+          conference: 0.8
+          preprint: 0.5
+        citation_boost: 0.8  # 高引用论文加分
+
+      recency:
+        weight: 0.3
+        recent_days: 365  # 1年内为新论文
+
+      length:
+        ideal_min_length: 2000  # 论文通常较长
+        ideal_max_length: 20000
+
+  # 电商产品检索场景
+  ecommerce_scenario:
+    enabled_rules:
+      - "keyword"
+      - "authority"
+
+    rule_params:
+      keyword:
+        weight: 0.7
+        mandatory_keywords: []  # 无必须关键词
+        boost_keywords: ["热销", "新品", "推荐", "爆款"]
+        penalty_keywords: ["缺货", "下架", "停产"]
+        keyword_weights:
+          优惠券: 0.5
+          折扣: 0.5
+          包邮: 0.3
+
+      authority:
+        source_weights:
+          brand_official: 1.0
+          verified_seller: 0.9
+          user_review: 0.6
+
+# ============================================
+# 🛡️ 生产环境安全配置
+# ============================================
+security_config:
+  # API密钥管理
+  api_keys:
+    # 使用环境变量，不要硬编码
+    # 正确：api_key: "${API_KEY}"
+    # 错误：api_key: "sk-123456789"
+
+    # 密钥轮换策略
+    rotation_days: 90
+    max_keys: 3
+
+  # 网络和访问控制
+  network:
+    allowed_ips:
+      - "10.0.0.0/8"     # 内部网络
+      - "192.168.0.0/16" # 内网
+    rate_limit:          # 限流配置
+      enabled: true
+      requests_per_minute: 100
+      burst_size: 20
+
+  # 数据保护
+  data_protection:
+    encrypt_sensitive_data: true
+    log_redaction: true    # 日志脱敏
+    audit_logging: true    # 审计日志
+
+# ============================================
+# 📊 监控和告警配置
+# ============================================
+monitoring_config:
+  # Prometheus指标
+  prometheus:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+
+  # 健康检查端点
+  health_check:
+    endpoint: "/health"
+    interval: 30
+    timeout: 5
+
+  # 性能阈值告警
+  alerts:
+    - metric: "retrieval_latency_p99"
+      threshold: 1000  # 1秒
+      severity: "warning"
+
+    - metric: "cache_hit_rate"
+      threshold: 0.3   # 30%
+      severity: "critical"
+      operator: "lt"   # 小于阈值触发
+
+    - metric: "error_rate"
+      threshold: 0.05  # 5%
+      severity: "critical"
+
+  # 日志聚合
+  logging:
+    format: "json"
+    level: "INFO"
+    output:
+      - file: "./logs/app.log"
+      - stdout: true
+    sentry:
+      enabled: true
+      dsn: "${SENTRY_DSN}"
+
+# ============================================
+# 🚨 故障排除和调试配置
+# ============================================
+debug_config:
+  # 调试模式
+  debug_mode:
+    enabled: false  # 生产环境保持false
+    log_level: "DEBUG"
+    trace_requests: true
+    profile_performance: false
+
+  # 请求追踪
+  request_tracing:
+    enabled: true
+    header: "X-Request-ID"
+    include_body: false  # 生产环境建议false
+
+  # 慢查询日志
+  slow_query:
+    enabled: true
+    threshold_ms: 500
+    log_details: true
+
+  # 内存分析
+  memory_profiling:
+    enabled: false
+    interval: 60
+    dump_on_error: true
+
+# ============================================
+# 🔄 动态配置示例
+# ============================================
+dynamic_config:
+  # 基于时间的配置
+  time_based:
+    business_hours:  # 工作时间配置
+      start: "09:00"
+      end: "18:00"
+      config:
+        cache_ttl: 1800  # 30分钟
+        rate_limit: 200  # 更高限流
+
+    off_hours:  # 非工作时间配置
+      config:
+        cache_ttl: 7200  # 2小时
+        rate_limit: 50   # 更低限流
+
+  # 基于负载的配置
+  load_based:
+    low_load:  # 低负载
+      threshold: 0.3
+      config:
+        pre_rank_top_k: 30
+        re_rank_top_k: 10
+
+    high_load:  # 高负载
+      threshold: 0.8
+      config:
+        pre_rank_top_k: 20
+        re_rank_top_k: 5
+        disable_rules: ["length"]  # 禁用计算密集型规则
+
+  # A/B测试配置
+  ab_testing:
+    enabled: true
+    experiments:
+      - name: "bm25_weight_experiment"
+        groups:
+          control:
+            weight: 0.7
+            traffic: 0.5
+          variant:
+            weight: 0.8
+            traffic: 0.5
+        metric: "ndcg@5"  # 评估指标
+
+# ============================================
+# 💡 最佳实践提示
+# ============================================
+best_practices:
+  # 配置管理
+  - "使用环境变量管理敏感信息（API密钥、密码等）"
+  - "为不同环境（开发、测试、生产）使用不同配置文件"
+  - "定期审查和更新配置，删除不再使用的配置项"
+
+  # 性能优化
+  - "根据数据规模选择合适的向量存储"
+  - "监控缓存命中率，调整缓存策略"
+  - "批量处理文档以提高吞吐量"
+
+  # 可维护性
+  - "为配置项添加注释说明用途"
+  - "使用版本控制管理配置文件"
+  - "配置变更时进行回归测试"
+
+  # 安全性
+  - "不要将配置文件提交到公开仓库"
+  - "定期轮换API密钥"
+  - "启用访问日志和审计"
+
+# ============================================
+# 🆘 紧急情况快速配置
+# ============================================
+emergency_config:
+  # 服务降级（当依赖服务故障时）
+  service_degradation:
+    # 禁用精排，依赖粗排
+    disable_reranker: true
+    # 禁用缓存，避免缓存污染
+    disable_cache: true
+    # 简化规则引擎
+    minimal_rules: ["keyword"]
+
+  # 限流保护（当流量激增时）
+  rate_limiting:
+    max_requests_per_second: 10
+    queue_size: 100
+    timeout: 30
+
+  # 资源限制（当资源不足时）
+  resource_limits:
+    max_memory_mb: 1024
+    max_threads: 10
+    max_connections: 50
